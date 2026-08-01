@@ -1,103 +1,190 @@
-// Tipagem do jogo
-// Sobre a tipagem de TypeScript:
-//    Ela é bem completa e usa dos objetos de JavaScript.
-//    Cada objeto pode ser de um tipo. Criar tipos pode ser
-//    por composição e por uso das funções de tipo que TS
-//    disponibiliza (aqui eu não usei nenhuma). Idiomaticamente
-//    enums são feitos através do operador | então
-//    "X" | "Y" é um enum para todos os fins.
-//    Outro recurso importante é o uso de tipos dentro de tipos compostos.
-//    Eu usei no caso de Board['size']. Assim eu posso usar o tipo
-//    de 'size' sem necessariamente declara-lo separadamente.
-//    Outro operador importante é o as que permite forçar o castings
-//    de um tipo para um outro menor e especifico. Usei no main para
-//    criar as seeds.
+export type Posicao = [x: number, y: number]
+export type Direcao = "cima" | "baixo" | "esquerda" | "direita"
+export type Estado = "jogando" | "pausado" | "fim-de-jogo" | "venceu"
 
-/**
- * Tipo do jogo, possui um board, o score do jogador
- * e um state para decidir a proxima acao do jogo.
- */
-export type Game = {
-  board: Board
-  score: Score,
-  state: State
+export type Cobra = {
+  posicoes: Posicao[]
+  direcao: Direcao
 }
 
-/**
- * Pontuacao do jogador
- */
-export type Score = number
-
-/**
- * Estado atual do jogo, decide a proxima acao
- */
-export type State = "playing" | "stopped" | "paused"
-
-/**
- * Tabuleiro o jogo.
- *
- * Possui a cobra que o jogador vai controlar e uma fruta que ele tem que buscar
- * para pontuar. Possui tambem o tamanho do tabuleiro.
- */
-export type Board = {
-  size: [number, number]
-  snake: Snake
-  fruit: Fruit
+export type Tabuleiro = {
+  tamanho: [largura: number, altura: number]
+  cobra: Cobra
+  fruta: Posicao | null
 }
 
-/**
- * Cobra que o jogador vai controlar, possui head e positions.
- */
-export type Snake = {
-  positions: Pos[]
-  head: Pos
+export type Jogo = {
+  tabuleiro: Tabuleiro
+  pontuacao: number
+  estado: Estado
 }
 
-/**
- * Fruta que o jogador tem que buscar para pontuar no jogo
- */
-export type Fruit = {
-  pos: Pos
+const vetores: Record<Direcao, Posicao> = {
+  cima: [0, -1],
+  baixo: [0, 1],
+  esquerda: [-1, 0],
+  direita: [1, 0],
 }
-/**
- * Tipo que especifica uma posicao no jogo.
- */
-export type Pos = [Y, X]
 
-export type Y = number
+const opostas: Record<Direcao, Direcao> = {
+  cima: "baixo",
+  baixo: "cima",
+  esquerda: "direita",
+  direita: "esquerda",
+}
 
-export type X = number
+export function criaNovoJogo(
+  tamanho: Tabuleiro["tamanho"],
+  aleatorio: () => number = Math.random,
+): Jogo {
+  const largura = Math.max(10, Math.floor(tamanho[0]))
+  const altura = Math.max(6, Math.floor(tamanho[1]))
+  const cabeca: Posicao = [Math.floor(largura / 2), Math.floor(altura / 2)]
+  const posicoes: Posicao[] = [
+    cabeca,
+    [cabeca[0] - 1, cabeca[1]],
+    [cabeca[0] - 2, cabeca[1]],
+  ]
+  const tabuleiro: Tabuleiro = {
+    tamanho: [largura, altura],
+    cobra: { posicoes, direcao: "direita" },
+    fruta: null,
+  }
 
-export type Seeds = [number, number]
-
-// Functional Core
-export function criaNovoJogo(tamanho: Board['size'], seeds: Seeds): Game {
-  const board = criaNovoTabuleiro(tamanho, seeds)
-  const score = 0
-  const state = "playing"
+  const posicoesDisponiveis = posicoesLivres(tabuleiro)
+  if (posicoesDisponiveis.length > 0) {
+    tabuleiro.fruta = criaFruta(posicoesDisponiveis, aleatorio)
+  }
   return {
-    board,
-    score,
-    state
+    tabuleiro,
+    pontuacao: 0,
+    estado: posicoesDisponiveis.length > 0 ? "jogando" : "venceu",
   }
 }
 
-export function criaNovoTabuleiro(tamanho: Board['size'], seeds: Seeds): Board {
-
-  const size = tamanho
-  const midWid = tamanho[0] / 2
-  const midHei = tamanho[1] / 2
-  const head = [midWid, midHei] as Pos
-
-  const fruit = { pos: seeds }
-  const snake = {
-    head,
-    positions: [head]
+export function mudaDirecao(jogo: Jogo, direcao: Direcao): Jogo {
+  if (jogo.estado !== "jogando" || opostas[jogo.tabuleiro.cobra.direcao] === direcao) {
+    return jogo
   }
 
   return {
-    snake,
-    fruit,
-    size
+    ...jogo,
+    tabuleiro: {
+      ...jogo.tabuleiro,
+      cobra: { ...jogo.tabuleiro.cobra, direcao },
+    },
   }
+}
+
+export function alternaPausa(jogo: Jogo): Jogo {
+  if (jogo.estado !== "jogando" && jogo.estado !== "pausado") return jogo
+  return { ...jogo, estado: jogo.estado === "jogando" ? "pausado" : "jogando" }
+}
+
+export function avancaJogo(jogo: Jogo, aleatorio: () => number = Math.random): Jogo {
+  if (jogo.estado !== "jogando") return jogo
+
+  const { tabuleiro } = jogo
+  const { posicoes: posicoesCobra, direcao: direcaoCobra } = tabuleiro.cobra
+  const cabeca = posicoesCobra[0]
+  if (!cabeca) return { ...jogo, estado: "fim-de-jogo" }
+
+  const vetor = vetores[direcaoCobra]
+  const proximaCabeca = calculaProximaCabeca(cabeca, vetor)
+  const comeu = comeuFruta(proximaCabeca, tabuleiro.fruta)
+  const corpoVerificado = corpoParaColisao(posicoesCobra, comeu)
+
+  if (
+    foraDoTabuleiro(proximaCabeca, tabuleiro.tamanho)
+    || corpoVerificado.some((posicao) => mesmaPosicao(posicao, proximaCabeca))
+  ) {
+    return { ...jogo, estado: "fim-de-jogo" }
+  }
+
+  const proximasPosicoes = atualizaPosicoes(proximaCabeca, posicoesCobra, comeu)
+  const novoTabuleiro = proximoTabuleiro(tabuleiro, proximasPosicoes, direcaoCobra, comeu)
+
+  if (comeu) {
+    const posicoesDisponiveis = posicoesLivres(novoTabuleiro)
+    if (posicoesDisponiveis.length === 0) {
+      return { tabuleiro: novoTabuleiro, pontuacao: jogo.pontuacao + 1, estado: "venceu" }
+    }
+    novoTabuleiro.fruta = criaFruta(posicoesDisponiveis, aleatorio)
+  }
+
+  return {
+    tabuleiro: novoTabuleiro,
+    pontuacao: jogo.pontuacao + (comeu ? 1 : 0),
+    estado: jogo.estado,
+  }
+}
+
+export function criaFruta(
+  posicoesDisponiveis: Posicao[],
+  aleatorio: () => number = Math.random,
+): Posicao {
+  const posicao = posicoesDisponiveis[Math.floor(aleatorio() * posicoesDisponiveis.length)]
+    ?? posicoesDisponiveis[0]
+  if (!posicao) throw new Error("Não há posição livre para criar a fruta")
+  return posicao
+}
+
+function posicoesLivres(tabuleiro: Tabuleiro): Posicao[] {
+  const [largura, altura] = tabuleiro.tamanho
+  const ocupadas = new Set(tabuleiro.cobra.posicoes.map(([x, y]) => `${x},${y}`))
+
+  // Cria uma matriz com todas as coordenadas possíveis do tabuleiro.
+  return Array.from({ length: altura }, (_, y) =>
+    Array.from({ length: largura }, (_, x): Posicao => [x, y]),
+  )
+    // Transforma a matriz de linhas em uma lista única de posições.
+    .flat()
+    // Mantém somente as posições que não estão ocupadas pela cobra.
+    .filter(([x, y]) => !ocupadas.has(`${x},${y}`))
+}
+
+function calculaProximaCabeca(cabeca: Posicao, vetor: Posicao): Posicao {
+  return [cabeca[0] + vetor[0], cabeca[1] + vetor[1]]
+}
+
+function comeuFruta(cabeca: Posicao, fruta: Posicao | null): boolean {
+  return fruta !== null && mesmaPosicao(cabeca, fruta)
+}
+
+function corpoParaColisao(posicoes: Posicao[], comeu: boolean): Posicao[] {
+  return comeu ? posicoes : posicoes.slice(0, -1)
+}
+
+function atualizaPosicoes(
+  proximaCabeca: Posicao,
+  posicoes: Posicao[],
+  comeu: boolean,
+): Posicao[] {
+  return comeu
+    ? [proximaCabeca, ...posicoes]
+    : [proximaCabeca, ...posicoes.slice(0, -1)]
+}
+
+function proximoTabuleiro(
+  tabuleiro: Tabuleiro,
+  posicoes: Posicao[],
+  direcao: Direcao,
+  comeu: boolean,
+): Tabuleiro {
+  return {
+    ...tabuleiro,
+    cobra: { posicoes, direcao },
+    fruta: comeu ? null : tabuleiro.fruta,
+  }
+}
+
+function mesmaPosicao([ax, ay]: Posicao, [bx, by]: Posicao): boolean {
+  return ax === bx && ay === by
+}
+
+function foraDoTabuleiro(
+  [x, y]: Posicao,
+  [largura, altura]: Tabuleiro["tamanho"],
+): boolean {
+  return x < 0 || x >= largura || y < 0 || y >= altura
 }

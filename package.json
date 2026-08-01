@@ -3,8 +3,16 @@
   "module": "index.ts",
   "type": "module",
   "private": true,
+  "scripts": {
+    "start": "bun run index.ts",
+    "check": "bunx tsc --noEmit",
+    "lint": "eslint ."
+  },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@eslint/js": "latest",
+    "@types/bun": "latest",
+    "eslint": "latest",
+    "typescript-eslint": "latest"
   },
   "peerDependencies": {
     "typescript": "^5"
